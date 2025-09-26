@@ -1,0 +1,25 @@
+# Dependencias para el Chatbot de Videojuegos con Embeddings Semánticos
+# =================================================================
+
+# Procesamiento de Lenguaje Natural
+spacy>=3.4.0
+nltk>=3.8.0
+
+# Modelos de spaCy (español)
+# Descargar con: python -m spacy download es_core_news_sm
+
+# Embeddings semánticos
+gensim>=4.2.0
+numpy>=1.21.0
+scipy>=1.7.0
+
+# Procesamiento de texto
+scikit-learn>=1.1.0
+
+# Utilidades
+pathlib2>=2.3.0
+typing-extensions>=4.0.0
+
+# Opcional: para mejor rendimiento
+# cython>=0.29.0
+# numba>=0.56.0

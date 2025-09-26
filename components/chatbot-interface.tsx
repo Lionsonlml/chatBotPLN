@@ -36,6 +36,29 @@ interface NLPAnalysis {
     keywords: Array<{word: string, category: string}>
     games_mentioned: string[]
     categories: Record<string, number>
+    semantic_analysis?: {
+      gaming_words_found: string[]
+      total_similarities: number
+      similarities: Array<{
+        word1: string
+        word2: string
+        similarity: number
+        similarity_percentage: number
+      }>
+      most_similar_pairs: Array<{
+        word1: string
+        word2: string
+        similarity: number
+        similarity_percentage: number
+      }>
+      average_similarity: number
+    }
+    similar_terms?: Array<{
+      rank: number
+      word: string
+      similarity: number
+      similarity_percentage: number
+    }>
   }
 }
 
@@ -195,27 +218,22 @@ export function ChatbotInterface() {
       description: getPOSDescription(getPOSTagImproved(token)),
     }))
     
-    // Análisis de contenido de videojuegos
-    let gamingAnalysis = null
-    try {
-      gamingAnalysis = analyze_gaming_content(text)
-    } catch (error) {
-      console.error("Error al analizar contenido de videojuegos:", error)
-      // Si hay error, creamos un análisis básico
-      const isGamingRelated = text.toLowerCase().includes('juego') || 
-                              text.toLowerCase().includes('videojuego') || 
-                              text.toLowerCase().includes('consola') ||
-                              text.toLowerCase().includes('gaming') ||
-                              text.toLowerCase().includes('playstation') ||
-                              text.toLowerCase().includes('xbox') ||
-                              text.toLowerCase().includes('nintendo')
-      
-      gamingAnalysis = {
-        is_gaming_related: isGamingRelated,
-        keywords: [],
-        games_mentioned: [],
-        categories: {}
-      }
+    // Análisis de contenido de videojuegos básico
+    const isGamingRelated = text.toLowerCase().includes('juego') || 
+                            text.toLowerCase().includes('videojuego') || 
+                            text.toLowerCase().includes('consola') ||
+                            text.toLowerCase().includes('gaming') ||
+                            text.toLowerCase().includes('playstation') ||
+                            text.toLowerCase().includes('xbox') ||
+                            text.toLowerCase().includes('nintendo')
+    
+    const gamingAnalysis = {
+      is_gaming_related: isGamingRelated,
+      keywords: [],
+      games_mentioned: [],
+      categories: {},
+      semantic_analysis: null,
+      similar_terms: []
     }
 
     return { tokens, lemmas, posTags, gamingAnalysis }
@@ -642,7 +660,7 @@ export function ChatbotInterface() {
                     División del texto en unidades básicas (tokens). Total: {message.analysis?.tokens.length} tokens
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    {message.analysis?.tokens.map((token, index) => (
+                    {message.analysis?.tokens?.map((token, index) => (
                       <Badge key={index} variant="outline" className="text-xs">
                         {index + 1}. {token}
                       </Badge>
@@ -664,7 +682,7 @@ export function ChatbotInterface() {
                     Forma base (lema) de cada palabra para análisis morfológico:
                   </p>
                   <div className="space-y-2">
-                    {message.analysis?.lemmas.map((lemma, index) => (
+                    {message.analysis?.lemmas?.map((lemma, index) => (
                       <div key={index} className="flex flex-col gap-1 p-3 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors">
                         <div className="flex justify-between items-center">
                           <span className="font-medium text-base">{lemma.word}</span>
@@ -692,54 +710,10 @@ export function ChatbotInterface() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground mb-3">
-            Categoría gramatical (Part-of-Speech) de cada palabra:
-          </p>
-          
-          {/* Análisis de videojuegos */}
-          {message.analysis?.gamingAnalysis && (
-            <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              <h4 className="text-sm font-medium flex items-center gap-2 mb-2">
-                <Gamepad2 className="h-4 w-4 text-blue-600" />
-                <span className="text-blue-800">Análisis de Videojuegos</span>
-              </h4>
-              
-              <div className="space-y-2">
-                <div className="flex items-center">
-                  <span className="text-xs font-medium mr-2 text-blue-700">Relacionado con videojuegos:</span>
-                  <Badge variant={message.analysis.gamingAnalysis.is_gaming_related ? "default" : "secondary"}>
-                    {message.analysis.gamingAnalysis.is_gaming_related ? "Sí" : "No"}
-                  </Badge>
-                </div>
-                
-                {message.analysis.gamingAnalysis.games_mentioned && message.analysis.gamingAnalysis.games_mentioned.length > 0 && (
-                  <div>
-                    <span className="text-xs font-medium text-blue-700">Juegos mencionados:</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {message.analysis.gamingAnalysis.games_mentioned.map((game, idx) => (
-                        <Badge key={idx} variant="outline" className="bg-blue-100 text-blue-800">{game}</Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {message.analysis.gamingAnalysis.keywords && message.analysis.gamingAnalysis.keywords.length > 0 && (
-                  <div>
-                    <span className="text-xs font-medium text-blue-700">Palabras clave:</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {message.analysis.gamingAnalysis.keywords.map((keyword, idx) => (
-                        <div key={idx} className="flex items-center">
-                          <Badge variant="outline" className="bg-blue-50">{keyword.word}</Badge>
-                          <span className="text-xs text-muted-foreground ml-1">({keyword.category})</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+                    Categoría gramatical (Part-of-Speech) de cada palabra:
+                  </p>
                   <div className="space-y-2">
-                    {message.analysis?.posTags.map((tag, index) => (
+                    {message.analysis?.pos_tags?.map((tag, index) => (
                       <div key={index} className="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors">
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-base">{tag.word}</span>
@@ -762,6 +736,147 @@ export function ChatbotInterface() {
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Análisis de Videojuegos */}
+              {message.analysis?.gaming_analysis && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Gamepad2 className="h-5 w-5 text-primary" />
+                      Análisis de Videojuegos
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                    <div className="flex items-center">
+                      <span className="text-sm font-medium mr-2">Relacionado con videojuegos:</span>
+                      <Badge variant={message.analysis.gaming_analysis.is_gaming_related ? "default" : "secondary"}>
+                        {message.analysis.gaming_analysis.is_gaming_related ? "Sí" : "No"}
+                      </Badge>
+                    </div>
+                      
+                      {message.analysis.gaming_analysis.games_mentioned && message.analysis.gaming_analysis.games_mentioned.length > 0 && (
+                        <div>
+                          <span className="text-sm font-medium text-blue-700">Juegos mencionados:</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {message.analysis.gaming_analysis.games_mentioned?.map((game, idx) => (
+                              <Badge key={idx} variant="outline" className="bg-blue-100 text-blue-800">{game}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {message.analysis.gaming_analysis.keywords && message.analysis.gaming_analysis.keywords.length > 0 && (
+                        <div>
+                          <span className="text-sm font-medium text-blue-700">Palabras clave:</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {message.analysis.gaming_analysis.keywords?.map((keyword, idx) => (
+                              <div key={idx} className="flex items-center">
+                                <Badge variant="outline" className="bg-blue-50">{keyword.word}</Badge>
+                                <span className="text-xs text-muted-foreground ml-1">({keyword.category})</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Embeddings Semánticos */}
+              {message.analysis?.gaming_analysis?.semantic_analysis && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Brain className="h-5 w-5 text-primary" />
+                      Embeddings Semánticos
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Análisis de similitudes semánticas usando Word2Vec:
+                    </p>
+                    
+                    <div className="space-y-4">
+                      {/* Palabras gaming encontradas */}
+                      <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        <h4 className="text-sm font-medium text-blue-800 mb-2">
+                          Palabras Gaming Encontradas
+                        </h4>
+                        <div className="flex flex-wrap gap-1">
+                          {message.analysis.gaming_analysis.semantic_analysis.gaming_words_found?.map((word, idx) => (
+                            <Badge key={idx} variant="outline" className="bg-blue-100 text-blue-800">
+                              {word}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Pares más similares */}
+                    {message.analysis.gaming_analysis.semantic_analysis.most_similar_pairs && 
+                     message.analysis.gaming_analysis.semantic_analysis.most_similar_pairs.length > 0 && (
+                        <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                          <h4 className="text-sm font-medium text-green-800 mb-2">
+                            Pares Más Similares
+                          </h4>
+                          <div className="space-y-2">
+                            {message.analysis.gaming_analysis.semantic_analysis.most_similar_pairs?.map((pair, idx) => (
+                              <div key={idx} className="flex items-center justify-between p-2 bg-white rounded border">
+                                <span className="text-sm">
+                                  <span className="font-medium">{pair.word1}</span> ↔ <span className="font-medium">{pair.word2}</span>
+                                </span>
+                                <Badge variant="outline" className="bg-green-100 text-green-800">
+                                  {pair.similarity_percentage}%
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Términos similares */}
+                    {message.analysis.gaming_analysis.similar_terms && 
+                     message.analysis.gaming_analysis.similar_terms.length > 0 && (
+                        <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                          <h4 className="text-sm font-medium text-purple-800 mb-2">
+                            Términos Similares
+                          </h4>
+                          <div className="space-y-2">
+                            {message.analysis.gaming_analysis.similar_terms?.slice(0, 5).map((term, idx) => (
+                              <div key={idx} className="flex items-center justify-between p-2 bg-white rounded border">
+                                <span className="text-sm">
+                                  {term.rank}. <span className="font-medium">{term.word}</span>
+                                </span>
+                                <Badge variant="outline" className="bg-purple-100 text-purple-800">
+                                  {term.similarity_percentage}%
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Estadísticas generales */}
+                      <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <h4 className="text-sm font-medium text-gray-800 mb-2">
+                          Estadísticas Semánticas
+                        </h4>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="flex justify-between">
+                            <span>Total similitudes:</span>
+                            <span className="font-medium">{message.analysis.gaming_analysis.semantic_analysis.total_similarities}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Similitud promedio:</span>
+                            <span className="font-medium">{message.analysis.gaming_analysis.semantic_analysis.average_similarity?.toFixed(3)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           ))}
 

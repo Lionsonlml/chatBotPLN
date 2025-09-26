@@ -1,4 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { spawn } from "child_process"
+import path from "path"
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,13 +10,64 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Texto requerido" }, { status: 400 })
     }
 
-    const analysis = enhancedNLPAnalysis(text)
+    // Usar el procesador con embeddings
+    const analysis = await processTextWithEmbeddings(text)
 
     return NextResponse.json(analysis)
   } catch (error) {
     console.error("Error procesando PLN:", error)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
   }
+}
+
+async function processTextWithEmbeddings(text: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.join(process.cwd(), 'scripts', 'nlp_processor_with_embeddings.py')
+    console.log(`Ejecutando script: ${scriptPath}`)
+    console.log(`Texto a procesar: ${text}`)
+    
+    const pythonProcess = spawn('py', [
+      '-3.12',
+      scriptPath,
+      text
+    ])
+
+    let outputData = ''
+    let errorData = ''
+
+    pythonProcess.stdout.on('data', (data) => {
+      outputData += data.toString()
+    })
+
+    pythonProcess.stderr.on('data', (data) => {
+      errorData += data.toString()
+      console.error(`Python Error: ${data}`)
+    })
+
+    pythonProcess.on('close', (code) => {
+      console.log(`Python process exited with code ${code}`)
+      console.log(`Output length: ${outputData.length}`)
+      console.log(`Error: ${errorData}`)
+      
+      if (code !== 0) {
+        console.error(`Python process exited with code ${code}`)
+        // Fallback al análisis simulado si hay error
+        resolve(enhancedNLPAnalysis(text))
+        return
+      }
+
+      try {
+        const result = JSON.parse(outputData)
+        console.log('Resultado parseado correctamente')
+        resolve(result)
+      } catch (error) {
+        console.error("Error parsing Python output:", error)
+        console.error("Raw output:", outputData)
+        // Fallback al análisis simulado si hay error de parsing
+        resolve(enhancedNLPAnalysis(text))
+      }
+    })
+  })
 }
 
 function enhancedNLPAnalysis(text: string) {

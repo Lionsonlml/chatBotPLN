@@ -5,6 +5,23 @@ para ser utilizado por el chatbot de PLN especializado en videojuegos.
 '''
 
 from typing import Dict, List, Tuple, Any
+import logging
+
+# Configuración de logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Importar módulo de embeddings semánticos
+try:
+    from semantic_embeddings import SemanticEmbeddings, get_similar_terms_for_word, analyze_gaming_text_similarities
+    EMBEDDINGS_AVAILABLE = True
+except ImportError:
+    try:
+        from .semantic_embeddings import SemanticEmbeddings, get_similar_terms_for_word, analyze_gaming_text_similarities
+        EMBEDDINGS_AVAILABLE = True
+    except ImportError:
+        logger.warning("Módulo de embeddings semánticos no disponible")
+        EMBEDDINGS_AVAILABLE = False
 
 # Vocabulario de videojuegos (palabras clave y sus categorías)
 GAMING_VOCABULARY = {
@@ -278,7 +295,9 @@ def get_gaming_response(text: str) -> str:
     # Buscar menciones de juegos específicos
     for game, info in GAME_INFO.items():
         if game in text_lower:
-            return f"{info['descripción']} Desarrollado por {info['desarrollador']} en {info['año']}, está disponible para {', '.join(info['plataformas'])} y pertenece al género {info['género']}."
+            base_response = f"{info['descripción']} Desarrollado por {info['desarrollador']} en {info['año']}, está disponible para {', '.join(info['plataformas'])} y pertenece al género {info['género']}."
+            # Enriquecer con análisis semántico
+            return enhance_gaming_response_with_semantics(text, base_response)
     
     # Identificar la categoría más relevante basada en palabras clave
     categories = {
@@ -310,11 +329,14 @@ def get_gaming_response(text: str) -> str:
     # Si no hay una categoría clara, usar respuesta general
     if max_category[1] == 0:
         import random
-        return random.choice(GAMING_RESPONSES['general'])
+        base_response = random.choice(GAMING_RESPONSES['general'])
+    else:
+        # Devolver respuesta de la categoría más relevante
+        import random
+        base_response = random.choice(GAMING_RESPONSES[max_category[0]])
     
-    # Devolver respuesta de la categoría más relevante
-    import random
-    return random.choice(GAMING_RESPONSES[max_category[0]])
+    # Enriquecer con análisis semántico
+    return enhance_gaming_response_with_semantics(text, base_response)
 
 def analyze_gaming_content(text: str) -> Dict[str, Any]:
     """Analiza el contenido relacionado con videojuegos en un texto."""
@@ -324,6 +346,8 @@ def analyze_gaming_content(text: str) -> Dict[str, Any]:
         'keywords': [],
         'games_mentioned': [],
         'categories': {},
+        'semantic_analysis': None,
+        'similar_terms': []
     }
     
     # Extraer palabras clave de videojuegos
@@ -344,4 +368,98 @@ def analyze_gaming_content(text: str) -> Dict[str, Any]:
         if game in text_lower:
             result['games_mentioned'].append(game)
     
+    # Análisis semántico con embeddings si está disponible
+    if EMBEDDINGS_AVAILABLE:
+        try:
+            # Análisis de similitudes semánticas
+            semantic_analysis = analyze_gaming_text_similarities(text)
+            result['semantic_analysis'] = semantic_analysis
+            
+            # Obtener términos similares para las palabras clave encontradas
+            for keyword_info in result['keywords']:
+                word = keyword_info['word']
+                similar_terms = get_similar_terms_for_word(word, topn=3)
+                result['similar_terms'].extend(similar_terms)
+            
+        except Exception as e:
+            logger.error(f"Error en análisis semántico: {str(e)}")
+            result['semantic_analysis'] = {'error': str(e)}
+    
     return result
+
+def get_semantic_similar_terms(word: str, topn: int = 5) -> List[Dict[str, Any]]:
+    """
+    Obtiene términos semánticamente similares a una palabra usando embeddings.
+    
+    Args:
+        word (str): Palabra de referencia
+        topn (int): Número de términos similares a devolver
+        
+    Returns:
+        List[Dict[str, Any]]: Lista de términos similares con información adicional
+    """
+    if not EMBEDDINGS_AVAILABLE:
+        logger.warning("Embeddings semánticos no disponibles")
+        return []
+    
+    try:
+        return get_similar_terms_for_word(word, topn)
+    except Exception as e:
+        logger.error(f"Error al obtener términos similares: {str(e)}")
+        return []
+
+def enhance_gaming_response_with_semantics(text: str, base_response: str) -> str:
+    """
+    Enriquece una respuesta de videojuegos usando análisis semántico.
+    
+    Args:
+        text (str): Texto del usuario
+        base_response (str): Respuesta base del chatbot
+        
+    Returns:
+        str: Respuesta enriquecida con información semántica
+    """
+    if not EMBEDDINGS_AVAILABLE:
+        return base_response
+    
+    try:
+        # Obtener análisis semántico
+        analysis = analyze_gaming_content(text)
+        
+        if not analysis.get('semantic_analysis'):
+            return base_response
+        
+        semantic_info = analysis['semantic_analysis']
+        
+        # Si hay términos similares interesantes, mencionarlos
+        if semantic_info.get('most_similar_pairs'):
+            similar_pairs = semantic_info['most_similar_pairs'][:2]  # Top 2 pares
+            similar_text = " Por cierto, veo que mencionas conceptos relacionados como "
+            similar_concepts = []
+            
+            for pair in similar_pairs:
+                if pair['similarity_percentage'] > 60:  # Solo si la similitud es alta
+                    similar_concepts.append(f"{pair['word1']} y {pair['word2']}")
+            
+            if similar_concepts:
+                similar_text += ", ".join(similar_concepts) + "."
+                base_response += similar_text
+        
+        # Si hay términos similares específicos, sugerir exploración
+        if analysis.get('similar_terms'):
+            top_terms = analysis['similar_terms'][:3]
+            if top_terms:
+                suggestions = []
+                for term in top_terms:
+                    if term['similarity_percentage'] > 70:
+                        suggestions.append(term['word'])
+                
+                if suggestions:
+                    suggestion_text = f" También podrías estar interesado en: {', '.join(suggestions)}."
+                    base_response += suggestion_text
+        
+        return base_response
+        
+    except Exception as e:
+        logger.error(f"Error al enriquecer respuesta: {str(e)}")
+        return base_response

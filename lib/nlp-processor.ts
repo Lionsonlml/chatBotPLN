@@ -8,9 +8,10 @@ interface NLPResult {
 }
 
 export async function processText(text: string): Promise<NLPResult> {
-  // Ejecutamos el script de Python que usa spaCy
-  const pythonProcess = spawn('python', [
-    path.join(process.cwd(), 'scripts', 'nlp_processor.py'),
+  // Ejecutamos el script de Python que usa spaCy con embeddings
+  const pythonProcess = spawn('py', [
+    '-3.12',
+    path.join(process.cwd(), 'scripts', 'nlp_processor_with_embeddings.py'),
     text
   ]);
 
