@@ -8,6 +8,10 @@ import sys
 import json
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
+import io
+
+# Configurar stdout para UTF-8
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 def load_gpt2_model():
     """Carga el modelo GPT-2 en español"""
@@ -28,73 +32,113 @@ def load_gpt2_model():
         return None, None
 
 def generate_response(tokenizer, model, prompt, max_length=120, temperature=0.1, top_p=0.9):
-    """Genera una respuesta usando GPT-2"""
+    """Genera una respuesta usando GPT-2 con control de repeticiones"""
     try:
-        # Usar prompts más simples y directos
-        simple_prompts = [
-            f"Pregunta: {prompt}\nRespuesta:",
-            f"Usuario dice: {prompt}\nBot responde:",
-            f"Conversación:\nUsuario: {prompt}\nBot:"
-        ]
-        
-        import random
-        enhanced_prompt = random.choice(simple_prompts)
+        # Agregar contexto conversacional para que GPT-2 entienda que es un chat
+        conversational_prompt = f"Pregunta: {prompt}\nRespuesta corta:"
         
         # Codificación del prompt
-        input_ids = tokenizer(enhanced_prompt, return_tensors="pt")
+        input_tokens = tokenizer(conversational_prompt, return_tensors="pt")
         
-        # Generar el texto con parámetros conservadores
+        # Calcular max_new_tokens en lugar de max_length para evitar repeticiones largas
+        input_length = input_tokens['input_ids'].shape[1]
+        max_new_tokens = min(30, max_length - input_length)  # Limitar a 30 tokens nuevos para respuestas cortas
+        
+        # Generar el texto con parámetros anti-repetición
         with torch.no_grad():
             output = model.generate(
-                **input_ids,
-                max_length=min(max_length + len(input_ids[0]), 150),  # Limitar longitud
-                temperature=max(temperature, 0.3),  # Temperatura mínima más alta
-                top_p=max(top_p, 0.8),  # Top-p más conservador
+                **input_tokens,
+                max_new_tokens=max_new_tokens,
+                min_length=input_length + 5,  # Mínimo 5 tokens nuevos
+                temperature=max(temperature, 0.7),  # Temperatura más alta para más variedad
+                top_p=top_p,
+                top_k=50,  # Limitar a los 50 tokens más probables
                 do_sample=True,
                 pad_token_id=tokenizer.eos_token_id,
                 eos_token_id=tokenizer.eos_token_id,
-                num_return_sequences=1,
-                repetition_penalty=1.5,  # Más penalización por repetición
-                no_repeat_ngram_size=2,   # N-gramas más pequeños
-                early_stopping=True,
-                max_new_tokens=50  # Limitar tokens nuevos
+                repetition_penalty=2.0,  # Penalización fuerte por repetición
+                no_repeat_ngram_size=3,  # No repetir secuencias de 3 palabras
+                early_stopping=True
             )
         
-        # Decodificar la respuesta
+        # Decodificar
         generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
         
-        # Limpiar la respuesta (remover el prompt original)
-        response = generated_text[len(enhanced_prompt):].strip()
+        # Extraer solo la respuesta (remover el prefijo del prompt)
+        if "Respuesta corta:" in generated_text:
+            response = generated_text.split("Respuesta corta:")[-1].strip()
+        else:
+            response = generated_text[len(conversational_prompt):].strip()
         
-        # Limpiar caracteres extraños y mejorar formato
-        response = response.replace("Usuario:", "").replace("Bot:", "").replace("Respuesta:", "").strip()
+        # Limpiar la respuesta
+        response = response.strip()
         
-        # Limpiar caracteres extraños específicos
-        import re
-        response = re.sub(r'[^\w\s\.,!?¿¡áéíóúüñÁÉÍÓÚÜÑ]', '', response)
+        # Si la respuesta es muy larga, tomar solo la primera oración
+        if len(response) > 200 or response.count('.') > 2:
+            first_sentence = response.split('.')[0] + '.'
+            if len(first_sentence) > 10:
+                response = first_sentence
         
-        # Si la respuesta está vacía, muy corta o contiene caracteres extraños, usar fallback
-        if len(response) < 10 or '' in response or len(response.split()) > 100:
-            fallback_responses = [
-                f"Hola! Has escrito: '{prompt}'. ¿En qué puedo ayudarte?",
-                f"Entiendo tu mensaje sobre '{prompt}'. ¿Podrías contarme más?",
-                f"Interesante lo que dices: '{prompt}'. ¿Qué te gustaría saber?",
-                f"Gracias por tu mensaje: '{prompt}'. ¿Hay algo específico que te interese?",
-                f"He recibido: '{prompt}'. ¿En qué más puedo asistirte?",
-                f"Comprendo tu punto: '{prompt}'. ¿Quieres que conversemos sobre esto?",
-                f"Perfecto, has dicho: '{prompt}'. ¿Qué opinas sobre este tema?",
-                f"Excelente mensaje: '{prompt}'. ¿Te gustaría profundizar en algo?"
-            ]
-            response = random.choice(fallback_responses)
+        # Verificar si hay repeticiones excesivas
+        words = response.split()
+        if len(words) > 10:
+            unique_words = len(set(words))
+            total_words = len(words)
+            repetition_ratio = unique_words / total_words
+            
+            # Si más del 70% son repeticiones, generar respuesta simple
+            if repetition_ratio < 0.3:
+                return generate_simple_response(prompt)
         
-        # Limitar longitud final
-        if len(response) > 200:
-            response = response[:200] + "..."
+        # Si la respuesta parece un artículo o tiene contenido irrelevante, usar respuesta simple
+        article_indicators = ['temporada', 'años', 'campeón', 'jugador', 'equipo', 'club', 'liga', 
+                            'montañas', 'valles', 'región', 'cultura', 'símbolo']
+        
+        words_lower = [w.lower() for w in words]
+        article_count = sum(1 for indicator in article_indicators if indicator in words_lower)
+        
+        if article_count >= 3:  # Si tiene 3 o más palabras de artículo, generar respuesta simple
+            return generate_simple_response(prompt)
+        
+        # Si está vacía o muy corta, generar respuesta simple
+        if len(response) < 5:
+            return generate_simple_response(prompt)
         
         return response
+        
     except Exception as e:
         print(f"Error generando respuesta: {e}", file=sys.stderr)
-        return f"Hola! He recibido tu mensaje: '{prompt}'. ¿En qué puedo ayudarte hoy?"
+        return generate_simple_response(prompt)
+
+def generate_simple_response(prompt):
+    """Genera respuestas simples y directas cuando GPT-2 falla"""
+    prompt_lower = prompt.lower()
+    
+    # Saludos
+    if any(greeting in prompt_lower for greeting in ['hola', 'hi', 'hello', 'buenas', 'saludos']):
+        responses = [
+            "¡Hola! ¿Cómo estás? ¿En qué puedo ayudarte?",
+            "¡Hola! Es un placer conversar contigo.",
+            "¡Hola! ¿Qué tal? ¿En qué puedo asistirte hoy?",
+            "¡Hola! Estoy aquí para ayudarte."
+        ]
+        import random
+        return random.choice(responses)
+    
+    # Preguntas sobre estado
+    if any(word in prompt_lower for word in ['como estas', 'qué tal', 'como va', 'todo bien']):
+        return "Muy bien, gracias por preguntar. ¿Y tú? ¿En qué puedo ayudarte?"
+    
+    # Preguntas sobre juegos
+    if any(word in prompt_lower for word in ['juego', 'videojuego', 'gaming']):
+        return "Hay muchos juegos excelentes. ¿Te interesan los de acción, aventura, o deportes? Algunos populares son Minecraft, Fortnite, FIFA, Mario y Zelda."
+    
+    # Preguntas sobre números o listas
+    if any(word in prompt_lower for word in ['dime', 'dame', 'lista', 'cuales', 'cuáles']):
+        return f"Interesante pregunta sobre '{prompt}'. ¿Podrías darme más detalles sobre qué tipo de información necesitas?"
+    
+    # Respuesta general
+    return f"Entiendo tu mensaje: '{prompt}'. ¿Podrías darme más contexto para ayudarte mejor?"
 
 def main():
     """Función principal"""
@@ -135,11 +179,10 @@ def main():
             "top_p": top_p
         },
         "prompt": prompt,
-        "timestamp": torch.datetime.now().isoformat() if hasattr(torch, 'datetime') else "2024-01-01T00:00:00"
+        "timestamp": "2024-01-01T00:00:00"
     }
     
     print(json.dumps(result, ensure_ascii=False))
 
 if __name__ == "__main__":
     main()
-

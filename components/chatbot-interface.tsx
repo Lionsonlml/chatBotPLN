@@ -132,7 +132,7 @@ export function ChatbotInterface() {
   // Configuración de parámetros GPT-2
   const [gpt2Config, setGpt2Config] = useState({
     max_length: 120,
-    temperature: 0.1,
+    temperature: 0.7,  // Temperatura más alta para evitar repeticiones
     top_p: 0.9
   })
   
@@ -784,8 +784,11 @@ export function ChatbotInterface() {
             
             <div>
               <label className="text-sm font-medium mb-2 block">
-                Temperatura: {gpt2Config.temperature}
+                Temperatura: {gpt2Config.temperature.toFixed(1)}
               </label>
+              <p className="text-xs text-muted-foreground mb-2">
+                0.7-0.9: Creativo | 0.3-0.6: Balanceado | 0.1-0.2: Predecible
+              </p>
               <Slider
                 value={[gpt2Config.temperature]}
                 onValueChange={(value) => setGpt2Config(prev => ({ ...prev, temperature: value[0] }))}

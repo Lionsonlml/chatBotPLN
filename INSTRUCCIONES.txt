@@ -1,0 +1,124 @@
+==========================================
+  INSTRUCCIONES DE INSTALACIÓN
+==========================================
+
+SIGUE ESTOS PASOS EN ORDEN:
+
+==========================================
+PASO 1: INSTALAR DEPENDENCIAS DE PYTHON
+==========================================
+
+Opción A - Usar script PowerShell (RECOMENDADO):
+-------------------------------------------------
+.\install.ps1
+
+Si aparece error de seguridad, ejecuta primero:
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+Luego ejecuta:
+.\install.ps1
+
+
+Opción B - Usar archivo .bat:
+------------------------------
+.\install_simple.bat
+
+
+Opción C - Instalar manualmente (copia y pega cada línea):
+-----------------------------------------------------------
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+pip install transformers>=4.21.0
+pip install pysentimiento>=0.1.4
+pip install spacy>=3.4.0
+pip install nltk>=3.8.0
+pip install "numpy>=1.21.0,<2.0.0"
+pip install "scipy>=1.7.0"
+pip install scikit-learn>=1.1.0
+pip install pathlib2>=2.3.0
+pip install typing-extensions>=4.0.0
+python -m spacy download es_core_news_sm
+
+
+==========================================
+PASO 2: INSTALAR DEPENDENCIAS DE NODE.JS
+==========================================
+
+npm install
+
+
+==========================================
+PASO 3: PROBAR GPT-2 (OPCIONAL)
+==========================================
+
+python test_gpt2_direct.py
+
+NOTA: La primera vez descargará el modelo (~500 MB)
+      Esto puede tardar varios minutos según tu conexión
+
+
+==========================================
+PASO 4: EJECUTAR LA APLICACIÓN
+==========================================
+
+npm run dev
+
+
+==========================================
+PASO 5: USAR EL CHATBOT
+==========================================
+
+1. Abre tu navegador
+2. Ve a: http://localhost:3000
+3. Escribe "hola" para comenzar
+4. ¡Disfruta!
+
+
+==========================================
+SOLUCIÓN DE PROBLEMAS
+==========================================
+
+Error: "install_simple.bat no se reconoce"
+------------------------------------------
+Solución: Usa .\ al inicio
+Correcto: .\install_simple.bat
+
+
+Error: "No se puede ejecutar scripts"
+--------------------------------------
+Solución: Ejecuta primero esto:
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+
+El modelo tarda mucho en cargar
+--------------------------------
+Es normal la primera vez. El modelo se descarga (~500 MB)
+
+
+Caracteres extraños en respuestas
+----------------------------------
+Ya está solucionado en el código
+
+
+==========================================
+VERIFICAR INSTALACIÓN
+==========================================
+
+Para verificar que Python y los paquetes están instalados:
+
+python --version
+pip list
+
+Para verificar Node.js:
+
+node --version
+npm --version
+
+
+==========================================
+¿NECESITAS AYUDA?
+==========================================
+
+Si tienes problemas, revisa:
+- GUIA_INSTALACION.md (guía detallada)
+- README_GPT2.md (documentación completa)
+

@@ -34,17 +34,20 @@ async function processWithGPT2(text: string, max_length: number, temperature: nu
       max_length.toString(),
       temperature.toString(),
       top_p.toString()
-    ])
+    ], {
+      encoding: 'utf8',
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+    })
 
     let outputData = ''
     let errorData = ''
 
     pythonProcess.stdout.on('data', (data) => {
-      outputData += data.toString()
+      outputData += data.toString('utf8')
     })
 
     pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString()
+      errorData += data.toString('utf8')
       console.error(`Python Error: ${data}`)
     })
 
