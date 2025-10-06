@@ -9,17 +9,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { Send, Bot, User, Brain, Tag, Hash, Gamepad2 } from "lucide-react"
-
-// Importamos funciones del módulo de conocimiento de videojuegos
-import { get_gaming_response, is_gaming_related, analyze_gaming_content } from "@/lib/gaming_knowledge"
+import { Slider } from "@/components/ui/slider"
+import { Send, Bot, User, Brain, Settings, Heart, Smile, Frown, Hash, Tag, Gamepad2 } from "lucide-react"
 
 interface Message {
   id: string
   content: string
   sender: "user" | "bot"
   timestamp: Date
-  analysis?: NLPAnalysis
+  gpt2Response?: GPT2Response
+  sentimentAnalysis?: SentimentAnalysis
+  nlpAnalysis?: NLPAnalysis
 }
 
 interface NLPAnalysis {
@@ -62,7 +62,44 @@ interface NLPAnalysis {
   }
 }
 
+interface GPT2Response {
+  response: string
+  model: string
+  parameters: {
+    max_length: number
+    temperature: number
+    top_p: number
+  }
+  prompt: string
+  timestamp: string
+}
+
+interface SentimentAnalysis {
+  text: string
+  sentiment: "POS" | "NEG" | "NEU"
+  confidence: number
+  probabilities: {
+    POS: number
+    NEG: number
+    NEU: number
+  }
+  model: string
+  timestamp: string
+}
+
 type ConversationState = "waiting_greeting" | "active" | "ended"
+
+const SENTIMENT_COLORS = {
+  POS: "bg-green-200 text-green-900",
+  NEG: "bg-red-200 text-red-900", 
+  NEU: "bg-gray-200 text-gray-900"
+}
+
+const SENTIMENT_ICONS = {
+  POS: Smile,
+  NEG: Frown,
+  NEU: Heart
+}
 
 const POS_COLORS: { [key: string]: string } = {
   NOUN: "bg-blue-200 text-blue-900 font-medium",
@@ -87,22 +124,28 @@ const POS_COLORS: { [key: string]: string } = {
 export function ChatbotInterface() {
   const [conversationState, setConversationState] = useState<ConversationState>("waiting_greeting")
   const [messageCount, setMessageCount] = useState(0)
-
   const [messages, setMessages] = useState<Message[]>([])
+  const [inputValue, setInputValue] = useState("")
+  const [isProcessing, setIsProcessing] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Configuración de parámetros GPT-2
+  const [gpt2Config, setGpt2Config] = useState({
+    max_length: 120,
+    temperature: 0.1,
+    top_p: 0.9
+  })
   
   useEffect(() => {
     setMessages([
       {
         id: "1",
-        content: "¡Hola! Soy tu asistente virtual. ¿Qué tal estás?",
+        content: "¡Hola! Soy tu asistente virtual con GPT-2 en español. ¿Qué tal estás?",
         sender: "bot",
         timestamp: new Date(),
       },
     ])
   }, [])
-  const [inputValue, setInputValue] = useState("")
-  const [isProcessing, setIsProcessing] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -122,62 +165,40 @@ export function ChatbotInterface() {
     return farewells.some((farewell) => text.toLowerCase().includes(farewell))
   }
 
-  const generateConversationalResponse = (userText: string, messageCount: number): string => {
+  const processGPT2 = async (text: string): Promise<GPT2Response> => {
     try {
-      // Intentamos usar el módulo de conocimiento de videojuegos para generar respuestas
-      return get_gaming_response(userText)
+      const response = await fetch("/api/gpt2-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ 
+          text,
+          max_length: gpt2Config.max_length,
+          temperature: gpt2Config.temperature,
+          top_p: gpt2Config.top_p
+        }),
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        return result
+      } else {
+        throw new Error("Error en la API GPT-2")
+      }
     } catch (error) {
-      console.error("Error al generar respuesta de videojuegos:", error)
-      
-      // Respuestas de fallback relacionadas con videojuegos
-      const gamingResponses = [
-        `Interesante lo que dices sobre videojuegos: "${userText}". ¿Tienes algún juego favorito?`,
-        `Me parece muy bien tu mensaje: "${userText}". ¿Qué género de videojuegos prefieres?`,
-        `Gracias por compartir: "${userText}". ¿Qué consola o plataforma usas para jugar?`,
-        `Perfecto, has escrito: "${userText}". Los videojuegos han evolucionado mucho en las últimas décadas.`,
-        `Excelente ejemplo: "${userText}". ¿Prefieres juegos indie o AAA?`,
-        `Muy bien, analizando: "${userText}". ¿Qué opinas de los juegos de mundo abierto?`,
-        `Genial tu texto: "${userText}". ¿Has probado algún juego de realidad virtual?`,
-        `Fantástico: "${userText}". ¿Sigues algún streamer o creador de contenido de videojuegos?`,
-      ]
-      
-      // Respuestas para mensajes fuera del tema de videojuegos
-      const offTopicResponses = [
-        "Estamos hablando de videojuegos. Si tienes alguna pregunta o comentario sobre juegos, consolas, o la industria gaming, estaré encantado de seguir la conversación.",
-        "Parece que nos estamos desviando del tema de los videojuegos. ¿Te gustaría que volvamos a hablar sobre algún aspecto del mundo gaming?",
-        "Como especialista en videojuegos, puedo ofrecerte información sobre juegos, plataformas, géneros y más. ¿Hay algo específico del mundo gaming que te interese?",
-        "Mi conocimiento se centra en videojuegos. Si quieres hablar de otro tema, puedo intentar relacionarlo con el mundo de los videojuegos si es posible.",
-        "Estoy especializado en conversar sobre videojuegos. ¿Quieres que hablemos sobre algún juego, consola o tendencia reciente en la industria?",
-      ]
-
-      // Verificar si el mensaje está relacionado con videojuegos
-      const isGamingRelated = userText.toLowerCase().includes('juego') || 
-                              userText.toLowerCase().includes('videojuego') || 
-                              userText.toLowerCase().includes('consola') ||
-                              userText.toLowerCase().includes('gaming') ||
-                              userText.toLowerCase().includes('playstation') ||
-                              userText.toLowerCase().includes('xbox') ||
-                              userText.toLowerCase().includes('nintendo')
-
-      // Respuestas especiales para ciertos números de mensaje
-      if (messageCount === 1) {
-        return `¡Perfecto! Ahora que hemos iniciado la conversación, puedes escribir sobre videojuegos y te mostraré su análisis completo. Has escrito: "${userText}".`
-      } else if (messageCount % 5 === 0) {
-        return `¡Llevamos ${messageCount} intercambios! Sigues escribiendo textos interesantes como: "${userText}". ¿Qué juegos has estado jugando últimamente?`
+      console.log("Error con GPT-2, usando respuesta de fallback")
+      return {
+        response: `He recibido tu mensaje: "${text}". Este es un ejemplo de respuesta generada por GPT-2 en español.`,
+        model: "gpt2-small-spanish-fallback",
+        parameters: gpt2Config,
+        prompt: text,
+        timestamp: new Date().toISOString()
       }
-
-      // Si el mensaje no está relacionado con videojuegos, redirigir la conversación
-      if (!isGamingRelated) {
-        return offTopicResponses[Math.floor(Math.random() * offTopicResponses.length)]
-      }
-      
-      return gamingResponses[Math.floor(Math.random() * gamingResponses.length)]
     }
   }
 
   const processNLP = async (text: string): Promise<NLPAnalysis> => {
-    setIsProcessing(true)
-
     try {
       const response = await fetch("/api/nlp-process", {
         method: "POST",
@@ -194,10 +215,8 @@ export function ChatbotInterface() {
         return simulateNLPAnalysis(text)
       }
     } catch (error) {
-      console.log("[v0] API no disponible, usando análisis simulado")
+      console.log("[v0] API NLP no disponible, usando análisis simulado")
       return simulateNLPAnalysis(text)
-    } finally {
-      setIsProcessing(false)
     }
   }
 
@@ -232,7 +251,7 @@ export function ChatbotInterface() {
       keywords: [],
       games_mentioned: [],
       categories: {},
-      semantic_analysis: null,
+      semantic_analysis: undefined,
       similar_terms: []
     }
 
@@ -435,6 +454,67 @@ export function ChatbotInterface() {
     return descriptions[pos] || "Desconocido"
   }
 
+  const processSentiment = async (text: string): Promise<SentimentAnalysis> => {
+    try {
+      const response = await fetch("/api/sentiment-analysis", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text }),
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        return result
+      } else {
+        throw new Error("Error en la API de sentimientos")
+      }
+    } catch (error) {
+      console.log("Error con análisis de sentimientos, usando análisis básico")
+      // Análisis básico de fallback
+      const positiveWords = ['bueno', 'excelente', 'genial', 'fantástico', 'maravilloso', 'increíble', 'perfecto', 'me gusta', 'amor', 'feliz']
+      const negativeWords = ['malo', 'terrible', 'horrible', 'odio', 'triste', 'enojado', 'molesto', 'problema', 'difícil', 'mal']
+      
+      const lowerText = text.toLowerCase()
+      
+      let positiveCount = 0
+      let negativeCount = 0
+      
+      positiveWords.forEach(word => {
+        if (lowerText.includes(word)) positiveCount++
+      })
+      
+      negativeWords.forEach(word => {
+        if (lowerText.includes(word)) negativeCount++
+      })
+      
+      let sentiment: "POS" | "NEG" | "NEU" = "NEU"
+      let confidence = 0.5
+      
+      if (positiveCount > negativeCount) {
+        sentiment = "POS"
+        confidence = Math.min(0.5 + (positiveCount * 0.1), 0.9)
+      } else if (negativeCount > positiveCount) {
+        sentiment = "NEG"
+        confidence = Math.min(0.5 + (negativeCount * 0.1), 0.9)
+      }
+      
+      return {
+        text: text,
+        sentiment: sentiment,
+        confidence: confidence,
+        probabilities: {
+          POS: sentiment === "POS" ? confidence : (1 - confidence) / 2,
+          NEG: sentiment === "NEG" ? confidence : (1 - confidence) / 2,
+          NEU: sentiment === "NEU" ? confidence : (1 - confidence) / 2
+        },
+        model: "fallback-basic",
+        timestamp: new Date().toISOString()
+      }
+    }
+  }
+
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return
 
@@ -448,31 +528,42 @@ export function ChatbotInterface() {
     setMessages((prev) => [...prev, userMessage])
     const currentInput = inputValue
     setInputValue("")
+    setIsProcessing(true)
 
     if (conversationState === "waiting_greeting") {
       if (detectGreeting(currentInput)) {
         setConversationState("active")
         setMessageCount(1)
 
+        // Procesar con GPT-2 y análisis de sentimientos
+        const [gpt2Response, sentimentAnalysis, nlpAnalysis] = await Promise.all([
+          processGPT2(currentInput),
+          processSentiment(currentInput),
+          processNLP(currentInput)
+        ])
+
         const botMessage: Message = {
           id: (Date.now() + 1).toString(),
-          content: `¡Excelente! Ahora que nos hemos saludado, nuestra conversación ha comenzado. Puedes escribir cualquier texto y te mostraré su análisis completo de PLN. Has escrito: "${currentInput}".`,
+          content: gpt2Response.response,
           sender: "bot",
           timestamp: new Date(),
-          analysis: await processNLP(currentInput),
+          gpt2Response,
+          sentimentAnalysis,
+          nlpAnalysis,
         }
 
         setMessages((prev) => [...prev, botMessage])
       } else {
         const botMessage: Message = {
           id: (Date.now() + 1).toString(),
-          content: `Para iniciar nuestra conversación, necesito que me saludes primero diciendo 'hola'. Una vez que lo hagas, podremos conversar y analizar cualquier texto que escribas.`,
+          content: "Para iniciar nuestra conversación, necesito que me saludes primero diciendo 'hola'. Una vez que lo hagas, podremos conversar usando GPT-2.",
           sender: "bot",
           timestamp: new Date(),
         }
 
         setMessages((prev) => [...prev, botMessage])
       }
+      setIsProcessing(false)
       return
     }
 
@@ -480,12 +571,21 @@ export function ChatbotInterface() {
       if (detectFarewell(currentInput)) {
         setConversationState("ended")
 
+        // Procesar despedida
+        const [gpt2Response, sentimentAnalysis, nlpAnalysis] = await Promise.all([
+          processGPT2(currentInput),
+          processSentiment(currentInput),
+          processNLP(currentInput)
+        ])
+
         const botMessage: Message = {
           id: (Date.now() + 1).toString(),
-          content: `¡Ha sido un placer conversar contigo! Espero que hayas aprendido mucho sobre el procesamiento de lenguaje natural. Analizamos tu despedida: "${currentInput}". ¡Hasta la próxima!`,
+          content: gpt2Response.response,
           sender: "bot",
           timestamp: new Date(),
-          analysis: await processNLP(currentInput),
+          gpt2Response,
+          sentimentAnalysis,
+          nlpAnalysis,
         }
 
         setMessages((prev) => [...prev, botMessage])
@@ -493,31 +593,39 @@ export function ChatbotInterface() {
         const newMessageCount = messageCount + 1
         setMessageCount(newMessageCount)
 
-        // Procesar PLN
-        const analysis = await processNLP(currentInput)
+        // Procesar con GPT-2 y análisis de sentimientos
+        const [gpt2Response, sentimentAnalysis, nlpAnalysis] = await Promise.all([
+          processGPT2(currentInput),
+          processSentiment(currentInput),
+          processNLP(currentInput)
+        ])
 
         const botMessage: Message = {
           id: (Date.now() + 1).toString(),
-          content: generateConversationalResponse(currentInput, newMessageCount),
+          content: gpt2Response.response,
           sender: "bot",
           timestamp: new Date(),
-          analysis,
+          gpt2Response,
+          sentimentAnalysis,
+          nlpAnalysis,
         }
 
         setMessages((prev) => [...prev, botMessage])
       }
+      setIsProcessing(false)
       return
     }
 
     if (conversationState === "ended") {
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `Nuestra conversación ya ha terminado. Si quieres iniciar una nueva conversación, recarga la página y salúdame nuevamente con 'hola'.`,
+        content: "Nuestra conversación ya ha terminado. Si quieres iniciar una nueva conversación, recarga la página y salúdame nuevamente con 'hola'.",
         sender: "bot",
         timestamp: new Date(),
       }
 
       setMessages((prev) => [...prev, botMessage])
+      setIsProcessing(false)
     }
   }
 
@@ -529,15 +637,14 @@ export function ChatbotInterface() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
       {/* Chat Interface */}
-      <div className="lg:col-span-2">
+      <div className="lg:col-span-3">
         <Card className="h-[600px] flex flex-col">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Bot className="h-5 w-5 text-primary" />
-              <Gamepad2 className="h-5 w-5 text-primary" />
-              Chat de Videojuegos con PLN 
+              Chat con GPT-2 en Español
               <Badge
                 variant={
                   conversationState === "active"
@@ -585,12 +692,22 @@ export function ChatbotInterface() {
                         }`}
                       >
                         <p className="text-sm">{message.content}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{message.timestamp.toLocaleTimeString()}</p>
-                  {message.analysis?.gamingAnalysis?.is_gaming_related && (
-                    <div className="mt-1">
-                      <Badge variant="outline" className="bg-green-100 text-green-800 text-xs">
-                        <Gamepad2 className="h-3 w-3 mr-1" /> Gaming
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {message.timestamp.toLocaleTimeString()}
+                        </p>
+                        {message.sentimentAnalysis && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <Badge variant="outline" className={`text-xs ${SENTIMENT_COLORS[message.sentimentAnalysis.sentiment]}`}>
+                              {(() => {
+                                const Icon = SENTIMENT_ICONS[message.sentimentAnalysis.sentiment]
+                                return <Icon className="h-3 w-3 mr-1" />
+                              })()}
+                              {message.sentimentAnalysis.sentiment === "POS" ? "Positivo" : 
+                               message.sentimentAnalysis.sentiment === "NEG" ? "Negativo" : "Neutral"}
                       </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {(message.sentimentAnalysis.confidence * 100).toFixed(0)}%
+                            </span>
                     </div>
                   )}
                       </div>
@@ -603,7 +720,7 @@ export function ChatbotInterface() {
                       <Bot className="h-4 w-4 text-primary-foreground animate-pulse" />
                     </div>
                     <div className="bg-card text-card-foreground border rounded-lg px-4 py-2">
-                      <p className="text-sm">Procesando análisis de PLN...</p>
+                      <p className="text-sm">Procesando con GPT-2...</p>
                     </div>
                   </div>
                 )}
@@ -640,258 +757,444 @@ export function ChatbotInterface() {
         </Card>
       </div>
 
-      {/* Analysis Panel */}
+      {/* Configuration and Analysis Panel */}
       <div className="space-y-4">
-        {messages
-          .filter((m) => m.analysis)
-          .slice(-1)
-          .map((message) => (
-            <div key={`analysis-${message.id}`} className="space-y-4">
-              {/* Tokenización */}
+        {/* GPT-2 Configuration */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
-                    <Hash className="h-5 w-5 text-primary" />
-                    Tokenización
+              <Settings className="h-5 w-5 text-primary" />
+              Configuración GPT-2
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    División del texto en unidades básicas (tokens). Total: {message.analysis?.tokens.length} tokens
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {message.analysis?.tokens?.map((token, index) => (
-                      <Badge key={index} variant="outline" className="text-xs">
-                        {index + 1}. {token}
-                      </Badge>
-                    ))}
+          <CardContent className="space-y-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Longitud máxima: {gpt2Config.max_length}
+              </label>
+              <Slider
+                value={[gpt2Config.max_length]}
+                onValueChange={(value) => setGpt2Config(prev => ({ ...prev, max_length: value[0] }))}
+                max={200}
+                min={50}
+                step={10}
+                className="w-full"
+              />
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Temperatura: {gpt2Config.temperature}
+              </label>
+              <Slider
+                value={[gpt2Config.temperature]}
+                onValueChange={(value) => setGpt2Config(prev => ({ ...prev, temperature: value[0] }))}
+                max={1.0}
+                min={0.1}
+                step={0.1}
+                className="w-full"
+              />
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Top-p: {gpt2Config.top_p}
+              </label>
+              <Slider
+                value={[gpt2Config.top_p]}
+                onValueChange={(value) => setGpt2Config(prev => ({ ...prev, top_p: value[0] }))}
+                max={1.0}
+                min={0.1}
+                step={0.1}
+                className="w-full"
+              />
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Lematización */}
+        {/* Last Message Analysis */}
+        {messages
+          .filter((m) => m.gpt2Response || m.sentimentAnalysis)
+          .slice(-1)
+          .map((message) => (
+            <div key={`analysis-${message.id}`} className="space-y-4">
+              {/* GPT-2 Response Info */}
+              {message.gpt2Response && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <Brain className="h-5 w-5 text-primary" />
-                    Lematización
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Forma base (lema) de cada palabra para análisis morfológico:
-                  </p>
-                  <div className="space-y-2">
-                    {message.analysis?.lemmas?.map((lemma, index) => (
-                      <div key={index} className="flex flex-col gap-1 p-3 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors">
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium text-base">{lemma.word}</span>
-                          <span className="text-lg text-primary">→</span>
-                          <span className="italic text-primary font-semibold text-base">{lemma.lemma}</span>
-                        </div>
-                        {lemma.context && (
-                          <span className="text-xs text-muted-foreground mt-1">
-                            Contexto: {lemma.context}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* POS Tagging */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <Tag className="h-5 w-5 text-primary" />
-                    Etiquetado POS
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Categoría gramatical (Part-of-Speech) de cada palabra:
-                  </p>
-                  <div className="space-y-2">
-                    {message.analysis?.pos_tags?.map((tag, index) => (
-                      <div key={index} className="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-base">{tag.word}</span>
-                          <Badge className={`text-xs ${POS_COLORS[tag.pos] || "bg-gray-100 text-gray-800"}`}>
-                            {tag.pos}
-                          </Badge>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <span className="text-sm text-muted-foreground">
-                            {tag.description}
-                          </span>
-                          {tag.relationship && (
-                            <span className="text-xs text-muted-foreground/80 italic">
-                              Relación: {tag.relationship}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Análisis de Videojuegos */}
-              {message.analysis?.gaming_analysis && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <Gamepad2 className="h-5 w-5 text-primary" />
-                      Análisis de Videojuegos
+                      Respuesta GPT-2
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                    <div className="flex items-center">
-                      <span className="text-sm font-medium mr-2">Relacionado con videojuegos:</span>
-                      <Badge variant={message.analysis.gaming_analysis.is_gaming_related ? "default" : "secondary"}>
-                        {message.analysis.gaming_analysis.is_gaming_related ? "Sí" : "No"}
+                      <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        <h4 className="text-sm font-medium text-blue-800 mb-2">Modelo</h4>
+                        <Badge variant="outline" className="bg-blue-100 text-blue-800">
+                          {message.gpt2Response.model}
                       </Badge>
                     </div>
                       
-                      {message.analysis.gaming_analysis.games_mentioned && message.analysis.gaming_analysis.games_mentioned.length > 0 && (
-                        <div>
-                          <span className="text-sm font-medium text-blue-700">Juegos mencionados:</span>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {message.analysis.gaming_analysis.games_mentioned?.map((game, idx) => (
-                              <Badge key={idx} variant="outline" className="bg-blue-100 text-blue-800">{game}</Badge>
-                            ))}
+                      <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                        <h4 className="text-sm font-medium text-green-800 mb-2">Parámetros</h4>
+                        <div className="space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span>Max Length:</span>
+                            <span className="font-medium">{message.gpt2Response.parameters.max_length}</span>
                           </div>
+                          <div className="flex justify-between">
+                            <span>Temperatura:</span>
+                            <span className="font-medium">{message.gpt2Response.parameters.temperature}</span>
                         </div>
-                      )}
-                      
-                      {message.analysis.gaming_analysis.keywords && message.analysis.gaming_analysis.keywords.length > 0 && (
-                        <div>
-                          <span className="text-sm font-medium text-blue-700">Palabras clave:</span>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {message.analysis.gaming_analysis.keywords?.map((keyword, idx) => (
-                              <div key={idx} className="flex items-center">
-                                <Badge variant="outline" className="bg-blue-50">{keyword.word}</Badge>
-                                <span className="text-xs text-muted-foreground ml-1">({keyword.category})</span>
+                          <div className="flex justify-between">
+                            <span>Top-p:</span>
+                            <span className="font-medium">{message.gpt2Response.parameters.top_p}</span>
                               </div>
-                            ))}
                           </div>
                         </div>
-                      )}
                     </div>
                   </CardContent>
                 </Card>
               )}
 
-              {/* Embeddings Semánticos */}
-              {message.analysis?.gaming_analysis?.semantic_analysis && (
+              {/* Sentiment Analysis */}
+              {message.sentimentAnalysis && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-lg">
-                      <Brain className="h-5 w-5 text-primary" />
-                      Embeddings Semánticos
+                      <Heart className="h-5 w-5 text-primary" />
+                      Análisis de Sentimientos
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm text-muted-foreground mb-3">
-                      Análisis de similitudes semánticas usando Word2Vec:
-                    </p>
-                    
-                    <div className="space-y-4">
-                      {/* Palabras gaming encontradas */}
-                      <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                        <h4 className="text-sm font-medium text-blue-800 mb-2">
-                          Palabras Gaming Encontradas
-                        </h4>
-                        <div className="flex flex-wrap gap-1">
-                          {message.analysis.gaming_analysis.semantic_analysis.gaming_words_found?.map((word, idx) => (
-                            <Badge key={idx} variant="outline" className="bg-blue-100 text-blue-800">
-                              {word}
+                    <div className="space-y-3">
+                      <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                        <h4 className="text-sm font-medium text-purple-800 mb-2">Sentimiento Detectado</h4>
+                        <div className="flex items-center gap-2">
+                          <Badge className={`${SENTIMENT_COLORS[message.sentimentAnalysis.sentiment]}`}>
+                            {(() => {
+                              const Icon = SENTIMENT_ICONS[message.sentimentAnalysis.sentiment]
+                              return <Icon className="h-3 w-3 mr-1" />
+                            })()}
+                            {message.sentimentAnalysis.sentiment === "POS" ? "Positivo" : 
+                             message.sentimentAnalysis.sentiment === "NEG" ? "Negativo" : "Neutral"}
                             </Badge>
-                          ))}
+                          <span className="text-sm font-medium">
+                            {(message.sentimentAnalysis.confidence * 100).toFixed(1)}%
+                          </span>
                         </div>
                       </div>
 
-                      {/* Pares más similares */}
-                    {message.analysis.gaming_analysis.semantic_analysis.most_similar_pairs && 
-                     message.analysis.gaming_analysis.semantic_analysis.most_similar_pairs.length > 0 && (
-                        <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                          <h4 className="text-sm font-medium text-green-800 mb-2">
-                            Pares Más Similares
-                          </h4>
-                          <div className="space-y-2">
-                            {message.analysis.gaming_analysis.semantic_analysis.most_similar_pairs?.map((pair, idx) => (
-                              <div key={idx} className="flex items-center justify-between p-2 bg-white rounded border">
-                                <span className="text-sm">
-                                  <span className="font-medium">{pair.word1}</span> ↔ <span className="font-medium">{pair.word2}</span>
-                                </span>
-                                <Badge variant="outline" className="bg-green-100 text-green-800">
-                                  {pair.similarity_percentage}%
-                                </Badge>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Términos similares */}
-                    {message.analysis.gaming_analysis.similar_terms && 
-                     message.analysis.gaming_analysis.similar_terms.length > 0 && (
-                        <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
-                          <h4 className="text-sm font-medium text-purple-800 mb-2">
-                            Términos Similares
-                          </h4>
-                          <div className="space-y-2">
-                            {message.analysis.gaming_analysis.similar_terms?.slice(0, 5).map((term, idx) => (
-                              <div key={idx} className="flex items-center justify-between p-2 bg-white rounded border">
-                                <span className="text-sm">
-                                  {term.rank}. <span className="font-medium">{term.word}</span>
-                                </span>
-                                <Badge variant="outline" className="bg-purple-100 text-purple-800">
-                                  {term.similarity_percentage}%
-                                </Badge>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Estadísticas generales */}
                       <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <h4 className="text-sm font-medium text-gray-800 mb-2">
-                          Estadísticas Semánticas
-                        </h4>
-                        <div className="grid grid-cols-2 gap-2 text-sm">
-                          <div className="flex justify-between">
-                            <span>Total similitudes:</span>
-                            <span className="font-medium">{message.analysis.gaming_analysis.semantic_analysis.total_similarities}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Similitud promedio:</span>
-                            <span className="font-medium">{message.analysis.gaming_analysis.semantic_analysis.average_similarity?.toFixed(3)}</span>
+                        <h4 className="text-sm font-medium text-gray-800 mb-2">Probabilidades</h4>
+                          <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">Positivo:</span>
+                            <div className="flex items-center gap-2">
+                              <div className="w-16 bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className="bg-green-500 h-2 rounded-full" 
+                                  style={{ width: `${message.sentimentAnalysis.probabilities.POS * 100}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-xs font-medium">
+                                {(message.sentimentAnalysis.probabilities.POS * 100).toFixed(0)}%
+                                </span>
                           </div>
                         </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">Negativo:</span>
+                            <div className="flex items-center gap-2">
+                              <div className="w-16 bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className="bg-red-500 h-2 rounded-full" 
+                                  style={{ width: `${message.sentimentAnalysis.probabilities.NEG * 100}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-xs font-medium">
+                                {(message.sentimentAnalysis.probabilities.NEG * 100).toFixed(0)}%
+                                </span>
+                          </div>
+                        </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">Neutral:</span>
+                            <div className="flex items-center gap-2">
+                              <div className="w-16 bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className="bg-gray-500 h-2 rounded-full" 
+                                  style={{ width: `${message.sentimentAnalysis.probabilities.NEU * 100}%` }}
+                                ></div>
+                          </div>
+                              <span className="text-xs font-medium">
+                                {(message.sentimentAnalysis.probabilities.NEU * 100).toFixed(0)}%
+                              </span>
+                          </div>
+                        </div>
+                        </div>
+                      </div>
+                      
+                      <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                        <h4 className="text-sm font-medium text-yellow-800 mb-2">Modelo</h4>
+                        <Badge variant="outline" className="bg-yellow-100 text-yellow-800">
+                          {message.sentimentAnalysis.model}
+                        </Badge>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
+              )}
+
+              {/* NLP Analysis */}
+              {message.nlpAnalysis && (
+                <div className="space-y-4">
+                  {/* Tokenización */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <Hash className="h-5 w-5 text-primary" />
+                        Tokenización
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        División del texto en unidades básicas (tokens). Total: {message.nlpAnalysis.tokens.length} tokens
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {message.nlpAnalysis.tokens?.map((token, index) => (
+                          <Badge key={index} variant="outline" className="text-xs">
+                            {index + 1}. {token}
+                          </Badge>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Lematización */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <Brain className="h-5 w-5 text-primary" />
+                        Lematización
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Forma base (lema) de cada palabra para análisis morfológico:
+                      </p>
+                      <div className="space-y-2">
+                        {message.nlpAnalysis.lemmas?.map((lemma, index) => (
+                          <div key={index} className="flex flex-col gap-1 p-3 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors">
+                            <div className="flex justify-between items-center">
+                              <span className="font-medium text-base">{lemma.word}</span>
+                              <span className="text-lg text-primary">→</span>
+                              <span className="italic text-primary font-semibold text-base">{lemma.lemma}</span>
+                            </div>
+                            {lemma.context && (
+                              <span className="text-xs text-muted-foreground mt-1">
+                                Contexto: {lemma.context}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* POS Tagging */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <Tag className="h-5 w-5 text-primary" />
+                        Etiquetado POS
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Categoría gramatical (Part-of-Speech) de cada palabra:
+                      </p>
+                      <div className="space-y-2">
+                        {message.nlpAnalysis.posTags?.map((tag, index) => (
+                          <div key={index} className="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-base">{tag.word}</span>
+                              <Badge className={`text-xs ${POS_COLORS[tag.pos] || "bg-gray-100 text-gray-800"}`}>
+                                {tag.pos}
+                              </Badge>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-sm text-muted-foreground">
+                                {tag.description}
+                              </span>
+                              {tag.relationship && (
+                                <span className="text-xs text-muted-foreground/80 italic">
+                                  Relación: {tag.relationship}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Análisis de Videojuegos */}
+                  {message.nlpAnalysis.gamingAnalysis && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                          <Gamepad2 className="h-5 w-5 text-primary" />
+                          Análisis de Videojuegos
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          <div className="flex items-center">
+                            <span className="text-sm font-medium mr-2">Relacionado con videojuegos:</span>
+                            <Badge variant={message.nlpAnalysis.gamingAnalysis.is_gaming_related ? "default" : "secondary"}>
+                              {message.nlpAnalysis.gamingAnalysis.is_gaming_related ? "Sí" : "No"}
+                            </Badge>
+                          </div>
+                          
+                          {message.nlpAnalysis.gamingAnalysis.games_mentioned && message.nlpAnalysis.gamingAnalysis.games_mentioned.length > 0 && (
+                            <div>
+                              <span className="text-sm font-medium text-blue-700">Juegos mencionados:</span>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {message.nlpAnalysis.gamingAnalysis.games_mentioned?.map((game, idx) => (
+                                  <Badge key={idx} variant="outline" className="bg-blue-100 text-blue-800">{game}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {message.nlpAnalysis.gamingAnalysis.keywords && message.nlpAnalysis.gamingAnalysis.keywords.length > 0 && (
+                            <div>
+                              <span className="text-sm font-medium text-blue-700">Palabras clave:</span>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {message.nlpAnalysis.gamingAnalysis.keywords?.map((keyword, idx) => (
+                                  <div key={idx} className="flex items-center">
+                                    <Badge variant="outline" className="bg-blue-50">{keyword.word}</Badge>
+                                    <span className="text-xs text-muted-foreground ml-1">({keyword.category})</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Embeddings Semánticos */}
+                  {message.nlpAnalysis.gamingAnalysis?.semantic_analysis && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                          <Brain className="h-5 w-5 text-primary" />
+                          Embeddings Semánticos
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm text-muted-foreground mb-3">
+                          Análisis de similitudes semánticas usando Word2Vec:
+                        </p>
+                        
+                        <div className="space-y-4">
+                          {/* Palabras gaming encontradas */}
+                          <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <h4 className="text-sm font-medium text-blue-800 mb-2">
+                              Palabras Gaming Encontradas
+                            </h4>
+                            <div className="flex flex-wrap gap-1">
+                              {message.nlpAnalysis.gamingAnalysis.semantic_analysis.gaming_words_found?.map((word, idx) => (
+                                <Badge key={idx} variant="outline" className="bg-blue-100 text-blue-800">
+                                  {word}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Pares más similares */}
+                          {message.nlpAnalysis.gamingAnalysis.semantic_analysis.most_similar_pairs && 
+                           message.nlpAnalysis.gamingAnalysis.semantic_analysis.most_similar_pairs.length > 0 && (
+                              <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                                <h4 className="text-sm font-medium text-green-800 mb-2">
+                                  Pares Más Similares
+                                </h4>
+                                <div className="space-y-2">
+                                  {message.nlpAnalysis.gamingAnalysis.semantic_analysis.most_similar_pairs?.map((pair, idx) => (
+                                    <div key={idx} className="flex items-center justify-between p-2 bg-white rounded border">
+                                      <span className="text-sm">
+                                        <span className="font-medium">{pair.word1}</span> ↔ <span className="font-medium">{pair.word2}</span>
+                                      </span>
+                                      <Badge variant="outline" className="bg-green-100 text-green-800">
+                                        {pair.similarity_percentage}%
+                                      </Badge>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                          {/* Términos similares */}
+                          {message.nlpAnalysis.gamingAnalysis.similar_terms && 
+                           message.nlpAnalysis.gamingAnalysis.similar_terms.length > 0 && (
+                              <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                                <h4 className="text-sm font-medium text-purple-800 mb-2">
+                                  Términos Similares
+                                </h4>
+                                <div className="space-y-2">
+                                  {message.nlpAnalysis.gamingAnalysis.similar_terms?.slice(0, 5).map((term, idx) => (
+                                    <div key={idx} className="flex items-center justify-between p-2 bg-white rounded border">
+                                      <span className="text-sm">
+                                        {term.rank}. <span className="font-medium">{term.word}</span>
+                                      </span>
+                                      <Badge variant="outline" className="bg-purple-100 text-purple-800">
+                                        {term.similarity_percentage}%
+                                      </Badge>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                          {/* Estadísticas generales */}
+                          <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                            <h4 className="text-sm font-medium text-gray-800 mb-2">
+                              Estadísticas Semánticas
+                            </h4>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div className="flex justify-between">
+                                <span>Total similitudes:</span>
+                                <span className="font-medium">{message.nlpAnalysis.gamingAnalysis.semantic_analysis.total_similarities}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Similitud promedio:</span>
+                                <span className="font-medium">{message.nlpAnalysis.gamingAnalysis.semantic_analysis.average_similarity?.toFixed(3)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
               )}
             </div>
           ))}
 
-        {messages.filter((m) => m.analysis).length === 0 && (
+        {messages.filter((m) => m.gpt2Response || m.sentimentAnalysis || m.nlpAnalysis).length === 0 && (
           <Card>
             <CardContent className="pt-6">
               <div className="text-center text-muted-foreground">
             <div className="flex justify-center items-center gap-2">
               <Brain className="h-12 w-12 opacity-50" />
-              <Gamepad2 className="h-12 w-12 opacity-50" />
+                  <Heart className="h-12 w-12 opacity-50" />
             </div>
             <p className="text-sm mt-4">
               {conversationState === "waiting_greeting"
-                ? "Saluda con 'hola' para comenzar a hablar de videojuegos y ver el análisis de PLN"
-                : "Envía un mensaje sobre videojuegos para ver el análisis de PLN en tiempo real"}
+                    ? "Saluda con 'hola' para comenzar a conversar con GPT-2"
+                    : "Envía un mensaje para ver la respuesta de GPT-2 y análisis de sentimientos"}
             </p>
           </div>
             </CardContent>

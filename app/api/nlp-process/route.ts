@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
 
 async function processTextWithEmbeddings(text: string): Promise<any> {
   return new Promise((resolve, reject) => {
-    const scriptPath = path.join(process.cwd(), 'scripts', 'nlp_processor_with_embeddings.py')
+    const scriptPath = path.join(process.cwd(), 'scripts', 'nlp_processor_simple.py')
     console.log(`Ejecutando script: ${scriptPath}`)
     console.log(`Texto a procesar: ${text}`)
     

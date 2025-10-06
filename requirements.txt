@@ -1,5 +1,12 @@
-# Dependencias para el Chatbot de Videojuegos con Embeddings Semánticos
+# Dependencias para el Chatbot con GPT-2 y Análisis de Sentimientos
 # =================================================================
+
+# Modelo GPT-2 en español (versiones compatibles con Windows)
+transformers>=4.21.0
+torch>=1.12.0
+
+# Análisis de sentimientos
+pysentimiento>=0.1.4
 
 # Procesamiento de Lenguaje Natural
 spacy>=3.4.0
@@ -8,9 +15,10 @@ nltk>=3.8.0
 # Modelos de spaCy (español)
 # Descargar con: python -m spacy download es_core_news_sm
 
-# Embeddings semánticos
+# Embeddings semánticos (versiones pre-compiladas para evitar problemas de compilación)
+--find-links https://download.pytorch.org/whl/torch_stable.html
 gensim>=4.2.0
-numpy>=1.21.0
+numpy>=1.21.0,<2.0.0
 scipy>=1.7.0
 
 # Procesamiento de texto
@@ -20,6 +28,6 @@ scikit-learn>=1.1.0
 pathlib2>=2.3.0
 typing-extensions>=4.0.0
 
-# Opcional: para mejor rendimiento
+# Opcional: para mejor rendimiento (comentado para evitar problemas en Windows)
 # cython>=0.29.0
 # numba>=0.56.0
